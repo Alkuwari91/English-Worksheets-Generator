@@ -97,9 +97,59 @@ REQUIRED_COLUMNS = ["student_id", "student_name", "grade", "skill", "score"]
 
 
 def ingest_and_validate(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    هذه الدالة تدعم شكل جدول الثيسس:
+    StudentNumber, StudentName, LanguageFunction, ReadingComprehension, Grammar, Writing, Total
+    وتحوله تلقائيًا إلى الشكل المطلوب:
+    student_id, student_name, grade, skill, score
+    """
+
+    # إذا كان الملف من نوع الثيسس (الأعمدة الموجودة في الصورة)
+    thesis_cols = {"StudentNumber", "StudentName",
+                   "LanguageFunction", "ReadingComprehension",
+                   "Grammar", "Writing"}
+
+    if thesis_cols.issubset(df.columns):
+        # نحول الجدول من wide إلى long: صف لكل مهارة
+        df_long = df.melt(
+            id_vars=["StudentNumber", "StudentName"],
+            value_vars=["LanguageFunction", "ReadingComprehension", "Grammar", "Writing"],
+            var_name="skill",
+            value_name="score",
+        )
+
+        # نعيد تسمية الأعمدة لتطابق ما يستخدمه باقي الكود
+        df_long = df_long.rename(
+            columns={
+                "StudentNumber": "student_id",
+                "StudentName": "student_name",
+            }
+        )
+
+        # نفترض أن كلهم من نفس الصف (Grade 3) – يمكنك تعديلها لاحقًا أو قراءتها من ملف آخر
+        df_long["grade"] = 3
+
+        df = df_long
+
+    # من هنا فصاعدًا نطبق نفس التحقق القديم على الأعمدة الموحدة
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+        raise ValueError(f"Missing required columns after transform: {missing}")
+
+    df = df.copy()
+
+    # تحويل score إلى رقم
+    df["score"] = pd.to_numeric(df["score"], errors="coerce")
+    df = df.dropna(subset=["score"])
+
+    # نفترض الدرجات من 0 إلى 100 (أو 0 إلى 25 حسب مقياسك، تقدرين تغيرينها)
+    df = df[(df["score"] >= 0) & (df["score"] <= 100)]
+
+    # إزالة المكررات
+    df = df.drop_duplicates()
+
+    return df
+
 
     df = df.copy()
 
