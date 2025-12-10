@@ -1,7 +1,10 @@
 import os
+import io
 import pandas as pd
 import streamlit as st
 from openai import OpenAI
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 # ==============================
 # Helper functions
@@ -28,7 +31,11 @@ def classify_level(score: float, low_thr: float = 50, high_thr: float = 75) -> s
 
 
 def transform_thesis_format(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert your dataset into long format."""
+    """
+    Convert thesis dataset into long format (one row per student & skill).
+    Expected columns:
+    StudentNumber, StudentName, LanguageFunction, ReadingComprehension, Grammar, Writing
+    """
     thesis_cols = {
         "StudentNumber", "StudentName",
         "LanguageFunction", "ReadingComprehension",
@@ -52,7 +59,40 @@ def transform_thesis_format(df: pd.DataFrame) -> pd.DataFrame:
         })
         return df_long
 
+    # If already in long format, just return as is
     return df
+
+
+def build_skill_instruction(skill: str) -> str:
+    """Return extra instructions depending on the skill name."""
+    s = skill.lower()
+    if "grammar" in s:
+        return (
+            "Focus the questions on grammar usage, sentence structure, "
+            "verb tenses, and correct/incorrect forms. Include fill-the-gap "
+            "or error-correction style MCQs where appropriate."
+        )
+    if "reading" in s:
+        return (
+            "Focus the questions on reading comprehension: main idea, details, "
+            "inference, and vocabulary in context related to the passage."
+        )
+    if "writing" in s:
+        return (
+            "Focus the questions on writing skills: organizing ideas, "
+            "choosing correct connectors, and building clear sentences. "
+            "Include questions that ask students to choose the best sentence or connector."
+        )
+    if "languagefunction" in s or "language function" in s:
+        return (
+            "Focus the questions on language functions such as making requests, "
+            "giving advice, asking for information, agreeing/disagreeing, etc. "
+            "Use everyday school situations in the passage and questions."
+        )
+    # default
+    return (
+        "Make sure the questions clearly practice the given skill in an age-appropriate way."
+    )
 
 
 def generate_worksheet(
@@ -63,13 +103,16 @@ def generate_worksheet(
     skill: str,
     level: str,
     num_questions: int = 5
-):
-    """Generate worksheet using GPT based on mapped curriculum grade."""
-    
+) -> str:
+    """Generate worksheet using GPT based on mapped curriculum grade and skill."""
+
+    skill_instruction = build_skill_instruction(skill)
+
     system_prompt = (
         "You are an educational content generator for primary school English "
         "within the Qatari National Curriculum. Adjust difficulty and language "
-        "based on the TARGET curriculum grade. Keep content clear and suitable for students."
+        "based on the TARGET curriculum grade. Keep content clear, culturally neutral, "
+        "and suitable for students."
     )
 
     user_prompt = f"""
@@ -77,17 +120,21 @@ Student name: {student_name}
 Actual school grade: {student_grade}
 Target curriculum grade: {curriculum_grade}
 Skill: {skill}
-Performance level: {level}
+Performance level: {level} (Low/Medium/High)
+
+Additional instructions about the skill:
+{skill_instruction}
 
 Task:
 1. Write a short reading passage (80–120 words) appropriate for the target grade.
-2. Focus on the given skill.
-3. Create {num_questions} MCQs (A–D).
+2. The passage and questions must clearly practise the given skill.
+3. Create {num_questions} multiple-choice questions (A–D).
 4. Provide an answer key clearly.
 
-Format required:
+Required format (use exactly these headings):
+
 PASSAGE:
-...
+<your passage>
 
 QUESTIONS:
 1) ...
@@ -95,9 +142,15 @@ A) ...
 B) ...
 C) ...
 D) ...
+2) ...
+...
 
 ANSWER KEY:
-1) ...
+1) C
+2) A
+...
+
+Only return the worksheet text in this format.
 """
 
     response = client.chat.completions.create(
@@ -110,6 +163,52 @@ ANSWER KEY:
     )
 
     return response.choices[0].message.content
+
+
+def worksheet_to_pdf(student_name: str, worksheet_text: str) -> bytes:
+    """
+    Convert worksheet text to a simple A4 PDF (in memory).
+    Returns the PDF as bytes so it can be downloaded in Streamlit.
+    """
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    # Simple margins
+    x = 40
+    y = height - 60
+
+    # Title
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(x, y, f"Worksheet for {student_name}")
+    y -= 30
+
+    c.setFont("Helvetica", 11)
+
+    # Draw text with simple line wrapping
+    for line in worksheet_text.split("\n"):
+        # wrap manually if line too long
+        while len(line) > 110:
+            part = line[:110]
+            c.drawString(x, y, part)
+            line = line[110:]
+            y -= 14
+            if y < 40:
+                c.showPage()
+                y = height - 60
+                c.setFont("Helvetica", 11)
+        c.drawString(x, y, line)
+        y -= 14
+        if y < 40:
+            c.showPage()
+            y = height - 60
+            c.setFont("Helvetica", 11)
+
+    c.showPage()
+    c.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 
 # ==============================
@@ -165,6 +264,26 @@ body, .stApp {
 .step-help {
     color: #555;
     font-size: 0.9rem;
+}
+
+/* Worksheet card */
+.worksheet-box {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+    white-space: pre-wrap;
+    font-family: "Cairo", sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.worksheet-box h4 {
+    margin-top: 0;
+    margin-bottom: 0.6rem;
+    color: #8A1538;
 }
 
 </style>
@@ -285,7 +404,7 @@ def main():
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="step-title">Step 3 — Generate worksheets</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="step-help">Choose a skill and level, then generate one worksheet per student in this group.</div>',
+        '<div class="step-help">Choose a skill and level, then generate one worksheet per student in this group. Each worksheet is tailored to the selected skill and can be downloaded as a PDF.</div>',
         unsafe_allow_html=True,
     )
 
@@ -299,11 +418,7 @@ def main():
 
     st.markdown(f"Students in this group: **{len(target_df)}**")
 
-    # debug: show whether button is pressed
-    pressed = st.button("Generate worksheets")
-    st.write("DEBUG – button pressed:", pressed)
-
-    if pressed:
+    if st.button("Generate worksheets"):
         if target_df.empty:
             st.error("No students match this skill + level.")
         else:
@@ -320,8 +435,25 @@ def main():
                             num_questions=num_questions,
                         )
 
-                        st.markdown(f"### Worksheet for {row['student_name']}")
-                        st.text(ws_text)
+                        # Show worksheet nicely
+                        st.markdown(
+                            f"""
+                            <div class="worksheet-box">
+                                <h4>Worksheet for {row['student_name']}</h4>
+                                {ws_text}
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                        # Create PDF and download button
+                        pdf_bytes = worksheet_to_pdf(row["student_name"], ws_text)
+                        st.download_button(
+                            label=f"Download PDF for {row['student_name']}",
+                            data=pdf_bytes,
+                            file_name=f"worksheet_{row['student_name']}.pdf",
+                            mime="application/pdf",
+                        )
 
                     st.success("All worksheets generated successfully ✅")
 
