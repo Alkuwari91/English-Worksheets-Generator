@@ -329,9 +329,13 @@ def main():
     st.dataframe(df.head(), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ----------------- STEP 3 -----------------
+       # ----------------- STEP 3 -----------------
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="step-title">Step 3 — Generate worksheets</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="step-help">Choose a skill and level, then generate one worksheet per student in this group.</div>',
+        unsafe_allow_html=True,
+    )
 
     skills = sorted(df["skill"].unique())
     selected_skill = st.selectbox("Choose skill", skills)
@@ -347,23 +351,31 @@ def main():
         if target_df.empty:
             st.error("No students match this skill + level.")
         else:
-            st.success("Generating...")
+            # نستخدم spinner + try/except عشان يطلع أي خطأ في الصفحة
+            with st.spinner("Generating worksheets using GPT…"):
+                try:
+                    for _, row in target_df.iterrows():
+                        ws_text = generate_worksheet(
+                            client=client,
+                            student_name=row["student_name"],
+                            student_grade=row["grade"],
+                            curriculum_grade=row["target_curriculum_grade"],
+                            skill=row["skill"],
+                            level=row["level"],
+                            num_questions=num_questions,
+                        )
 
-            for _, row in target_df.iterrows():
-                ws_text = generate_worksheet(
-                    client,
-                    student_name=row["student_name"],
-                    student_grade=row["grade"],
-                    curriculum_grade=row["target_curriculum_grade"],
-                    skill=row["skill"],
-                    level=row["level"],
-                    num_questions=num_questions,
-                )
+                        st.markdown(f"### Worksheet for {row['student_name']}")
+                        st.text(ws_text)
 
-                st.markdown(f"### Worksheet for {row['student_name']}")
-                st.text(ws_text)
+                    st.success("All worksheets generated successfully ✅")
+
+                except Exception as e:
+                    # نعرض الخطأ مباشرة للمستخدم عشان نعرف المشكلة لو فيه شي في الـ API
+                    st.error(f"Error while calling OpenAI API: {e}")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 if __name__ == "__main__":
