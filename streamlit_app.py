@@ -303,36 +303,84 @@ body, .stApp {
     opacity: .95;
 }
 
-/* ---------------- TABS ---------------- */
-.stTabs {
-    margin-top: .5rem;
-    margin-bottom: 1.2rem;
-}
+# ============================
+# TABS LAYOUT (CLEAN + NO ERRORS)
+# ============================
 
-.stTabs [data-baseweb="tab-list"] {
-    gap: .6rem;
-}
+tab_overview, tab_data, tab_generate, tab_help = st.tabs(
+    ["Overview", "Data & RAG", "Generate Worksheets", "Help & Tools"]
+)
 
-.stTabs [data-baseweb="tab"] {
-    background: #e8eaf0;
-    color: #4b5563;
-    border-radius: 999px;
-    padding: .45rem 1.3rem;
-    font-size: .9rem;
-    border: none;
-}
+# ---------------- OVERVIEW TAB ----------------
+with tab_overview:
+    st.markdown("<div class='card'><div class='step-title'>Overview</div>", unsafe_allow_html=True)
+    st.write("Welcome to the English Worksheets Generator prototype.")
+    st.write("Use the tabs above to navigate through the workflow.")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-.stTabs [data-baseweb="tab"]:hover {
-    background: #d5d7df;
-    color: #111827;
-}
 
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(135deg, #8A1538, #b11b49);
-    color: #ffffff !important;
-    font-weight: 700;
-    box-shadow: 0 4px 12px rgba(139, 20, 54, 0.35);
-}
+# ---------------- DATA & RAG TAB ----------------
+with tab_data:
+    st.markdown("<div class='card'><div class='step-title'>Step 1 — Upload student CSV</div>", unsafe_allow_html=True)
+
+    uploaded = st.file_uploader("Upload Students.csv", type=["csv"])
+    if uploaded:
+        df_raw = pd.read_csv(uploaded)
+        st.dataframe(df_raw, use_container_width=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='card'><div class='step-title'>Step 2 — Process & classify levels</div>", unsafe_allow_html=True)
+
+    if st.button("Process student data"):
+        processed = transform_thesis_format(df_raw)
+        processed["level"] = processed["score"].apply(
+            lambda x: "Low" if x < 50 else ("Medium" if x < 75 else "High")
+        )
+        st.session_state["processed_df"] = processed
+
+        st.success("Data processed successfully ✔")
+        st.dataframe(processed, use_container_width=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ---------------- GENERATE WORKSHEETS TAB ----------------
+with tab_generate:
+    st.markdown("<div class='card'><div class='step-title'>Generate worksheets</div>", unsafe_allow_html=True)
+
+    if "processed_df" not in st.session_state:
+        st.warning("Please process the student data first.")
+    else:
+        dfp = st.session_state["processed_df"]
+        skill = st.selectbox("Select skill", sorted(dfp["skill"].unique()))
+        level = st.selectbox("Performance level", ["Low", "Medium", "High"])
+
+        subset = dfp[(dfp["skill"] == skill) & (dfp["level"] == level)]
+        st.write(f"Students in this group: {len(subset)}")
+
+        if st.button("Generate PDFs"):
+            for _, row in subset.iterrows():
+                pdf = worksheet_to_pdf(
+                    student_name=row["student_name"],
+                    worksheet_text="Worksheet content here..."  # Replace once GPT is connected
+                )
+                st.download_button(
+                    f"Download PDF for {row['student_name']}",
+                    data=pdf,
+                    file_name=f"worksheet_{row['student_name']}.pdf",
+                    mime="application/pdf"
+                )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ---------------- HELP TAB ----------------
+with tab_help:
+    st.markdown("<div class='card'><div class='step-title'>Help & Tools</div>", unsafe_allow_html=True)
+    st.write("This section explains RAG, GPT usage, Pandas transformations, and the project workflow.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 /* ---------------- CARDS ---------------- */
 .card {
