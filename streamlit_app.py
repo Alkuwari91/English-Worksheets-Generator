@@ -518,103 +518,65 @@ def main():
             unsafe_allow_html=True,
         )
 
-    # -------- Data & RAG --------
-    with tab_data:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="step-title">Step 1 — Upload student performance CSV</div>', unsafe_allow_html=True)
+    # ----------------- STEP 3 (NEW CLEAN VERSION) -----------------
+
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown('<div class="step-title">Step 3 — Process data & classify levels</div>', unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="step-help">
+    This step automatically analyzes student scores and assigns performance levels 
+    using a rule-based classifier (Low / Medium / High).
+    No manual tuning is required.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <span class="tool-tag">Pandas</span> 
+    <span class="tool-tag">Rule-based classifier</span>
+    """,
+    unsafe_allow_html=True,
+)
+
+if st.button("Process student data"):
+    try:
+        df_processed = transform_thesis_format(df_raw)
+
+        # automatic classification
+        df_processed["level"] = df_processed["score"].apply(
+            lambda x: "Low" if x < 50 else ("Medium" if x < 75 else "High")
+        )
+
+        st.success("Student data processed successfully ✔")
+
+        # summary counts
+        counts = df_processed["level"].value_counts()
+
+        st.markdown("### Classification summary")
+
         st.markdown(
-            '<span class="tool-tag">Pandas</span><span class="tool-tag">Data validation</span>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<p class="step-help">Expected format (from thesis dataset): '
-            '<code>StudentNumber, StudentName, LanguageFunction, ReadingComprehension, Grammar, Writing</code>.</p>',
-            unsafe_allow_html=True,
-        )
-
-        uploaded = st.file_uploader("Upload Students.csv", type=["csv"], key="students_csv")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="step-title">Step 2 — Optional curriculum bank for RAG</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<span class="tool-tag">RAG</span><span class="tool-tag">Curriculum bank</span>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<p class="step-help">Upload a small CSV with at least columns '
-            '<code>grade</code> and <code>skill</code>, plus any descriptive fields '
-            '(objective, topic, example, etc.). The system will retrieve rows matching '
-            'the target grade and skill to guide the GPT prompts.</p>',
-            unsafe_allow_html=True,
+            f"""
+            - **Low:** {counts.get('Low', 0)} students  
+            - **Medium:** {counts.get('Medium', 0)} students  
+            - **High:** {counts.get('High', 0)} students  
+            """,
+            unsafe_allow_html=True
         )
 
-        curriculum_file = st.file_uploader(
-            "Upload curriculum bank CSV (optional, used for RAG)",
-            type=["csv"],
-            key="curriculum_csv"
-        )
+        st.dataframe(df_processed, use_container_width=True)
 
-        if curriculum_file is not None:
-            try:
-                cur_df = pd.read_csv(curriculum_file)
-                st.session_state["curriculum_df"] = cur_df
-                st.write("Curriculum bank preview:")
-                st.dataframe(cur_df.head(), use_container_width=True)
-            except Exception as e:
-                st.error(f"Could not read curriculum bank: {e}")
+        # store for next tab
+        st.session_state["processed_df"] = df_processed
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"Error while processing data: {e}")
 
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="step-title">Step 3 — Process data & classify levels</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<span class="tool-tag">Pandas</span><span class="tool-tag">Rule-based classifier</span>',
-            unsafe_allow_html=True,
-        )
+st.markdown("</div>", unsafe_allow_html=True)
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            class_grade = st.selectbox(
-                "Actual student grade (the class you are teaching)", [1, 2, 3, 4, 5, 6], index=4
-            )
-            low_thr = st.slider("Low threshold", 0, 100, 50)
-            high_thr = st.slider("High threshold", 0, 100, 75)
-
-        with col2:
-            grade_for_low = st.selectbox("Curriculum grade for LOW", [1, 2, 3, 4, 5, 6], index=0)
-            grade_for_medium = st.selectbox("Curriculum grade for MEDIUM", [1, 2, 3, 4, 5, 6], index=class_grade-1)
-            grade_for_high = st.selectbox("Curriculum grade for HIGH", [1, 2, 3, 4, 5, 6], index=min(class_grade, 6)-1)
-
-        def map_to_curriculum(level: str):
-            if level == "Low":
-                return grade_for_low
-            elif level == "Medium":
-                return grade_for_medium
-            return grade_for_high
-
-        if st.button("Process student data"):
-            if uploaded is None:
-                st.error("Please upload the student performance CSV first.")
-            else:
-                try:
-                    df_raw = pd.read_csv(uploaded)
-                    df = transform_thesis_format(df_raw)
-                    df["grade"] = class_grade
-                    df["level"] = df["score"].apply(lambda x: classify_level(x, low_thr, high_thr))
-                    df["target_curriculum_grade"] = df["level"].apply(map_to_curriculum)
-
-                    st.session_state["processed_df"] = df
-
-                    st.success("Student data processed successfully.")
-                    st.write("Processed data preview:")
-                    st.dataframe(df.head(), use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error while processing data: {e}")
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
     # -------- Generate Worksheets --------
     with tab_generate:
