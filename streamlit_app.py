@@ -4,16 +4,11 @@ import streamlit as st
 from openai import OpenAI
 
 # ==============================
-# Configuration
+# Helpers
 # ==============================
-ALLOWED_DOMAIN = "education.qa"  # فقط إيميلات الوزارة
 
-
-# ==============================
-# Helpers: Auth & API Key
-# ==============================
 def get_api_key() -> str:
-    """Get OpenAI API key from environment or Streamlit secrets."""
+    """Get OpenAI API key from environment or Streamlit secrets (no UI input)."""
     key = os.getenv("OPENAI_API_KEY")
     if not key:
         try:
@@ -23,62 +18,8 @@ def get_api_key() -> str:
     return key
 
 
-def check_auth() -> bool:
-    """Simple sign-in: email must end with @education.qa + correct password."""
-    if "authenticated" in st.session_state and st.session_state["authenticated"]:
-        return True
-
-    st.markdown(
-        """
-        <div class="login-card">
-            <h2>🔐 English Worksheets Generator</h2>
-            <p>Please sign in using your Ministry of Education email account.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.form("login_form"):
-        email = st.text_input("Ministry email ( @education.qa )")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Sign in")
-
-    if submit:
-        if not email or not password:
-            st.error("Please enter both email and password.")
-            return False
-
-        if not email.lower().endswith("@" + ALLOWED_DOMAIN):
-            st.error(f"Only {ALLOWED_DOMAIN} accounts are allowed.")
-            return False
-
-        app_password = None
-        try:
-            app_password = st.secrets.get("APP_PASSWORD", None)
-        except Exception:
-            app_password = None
-
-        # في البروتوتايب: لو ما تم ضبط APP_PASSWORD، نستخدم قيمة افتراضية
-        if app_password is None:
-            app_password = "education123"
-
-        if password != app_password:
-            st.error("Incorrect password.")
-            return False
-
-        # نجح تسجيل الدخول
-        st.session_state["authenticated"] = True
-        st.session_state["user_email"] = email
-        st.success("Signed in successfully.")
-        st.experimental_rerun()
-
-    return False
-
-
-# ==============================
-# Level Classification
-# ==============================
 def classify_level(score: float, low_thr: float = 50, high_thr: float = 75) -> str:
+    """Low / Medium / High based on thresholds."""
     if score < low_thr:
         return "Low"
     elif score < high_thr:
@@ -86,9 +27,6 @@ def classify_level(score: float, low_thr: float = 50, high_thr: float = 75) -> s
     return "High"
 
 
-# ==============================
-# Convert Your Excel Format → Long Format
-# ==============================
 def transform_thesis_format(df: pd.DataFrame) -> pd.DataFrame:
     """
     Supports thesis format:
@@ -126,13 +64,10 @@ def transform_thesis_format(df: pd.DataFrame) -> pd.DataFrame:
         )
         return df_long
 
-    # لو الملف أصلاً جاهز بالصيغة المطلوبة نرجعه كما هو
+    # إذا كان جاهز أصلاً بالصيغة المطلوبة نرجعه كما هو
     return df
 
 
-# ==============================
-# GPT Worksheet Generator
-# ==============================
 def generate_worksheet(
     client: OpenAI,
     student_name: str,
@@ -142,6 +77,7 @@ def generate_worksheet(
     level: str,
     num_questions: int = 5,
 ) -> str:
+    """Call GPT to generate one worksheet text."""
     system_prompt = (
         "You are an educational content generator for primary school English "
         "within the Qatari National Curriculum. Adjust difficulty and language "
@@ -162,7 +98,7 @@ Task:
 3. Create {num_questions} multiple-choice questions (A–D) based on the passage.
 4. Indicate the correct option clearly for each question.
 
-Return the result as clean text with headings:
+Return the result with headings:
 PASSAGE
 QUESTIONS
 ANSWER KEY
@@ -181,72 +117,86 @@ ANSWER KEY
 
 
 # ==============================
-# Custom CSS for clean UI (MoE style)
+# Simple styling (MoE-inspired)
 # ==============================
+
 CUSTOM_CSS = """
 <style>
-/* Hide Streamlit default header & footer */
 header {visibility: hidden;}
 footer {visibility: hidden;}
 
 body, .stApp {
-    background-color: #f7f8fb;
+    background-color: #f5f6fa;
     font-family: "Helvetica Neue", Arial, sans-serif;
 }
 
-/* Main container */
-.main-card {
+/* Generic cards */
+.card {
     background-color: #ffffff;
     border-radius: 18px;
-    padding: 1.8rem 2rem;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
-    margin-bottom: 1.5rem;
+    padding: 1.6rem 1.8rem;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.06);
+    margin-bottom: 1.2rem;
+}
+
+/* Hero */
+.hero-title {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #8A1538; /* Qatar maroon */
+    margin-bottom: 0.3rem;
+}
+.hero-subtitle {
+    font-size: 0.98rem;
+    color: #555;
 }
 
 /* Step titles */
 .step-title {
     font-size: 1.2rem;
     font-weight: 700;
-    color: #8A1538;  /* Qatar maroon */
-    margin-bottom: 0.3rem;
+    color: #8A1538;
+    margin-bottom: 0.2rem;
 }
-
-/* Small instructional text */
 .step-help {
     font-size: 0.9rem;
-    color: #555;
-    margin-bottom: 0.6rem;
-}
-
-/* Login card */
-.login-card {
-    max-width: 480px;
-    margin: 4rem auto 1rem auto;
-    background: #ffffff;
-    padding: 2rem 2.3rem;
-    border-radius: 18px;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.10);
-    text-align: center;
-}
-.login-card h2 {
-    color: #8A1538;
-    margin-bottom: 0.6rem;
-}
-.login-card p {
-    color: #555;
-}
-
-/* Main title */
-.app-title {
-    font-size: 2rem;
-    font-weight: 800;
-    color: #8A1538;
-    margin-bottom: 0.25rem;
-}
-.app-subtitle {
-    font-size: 0.98rem;
     color: #666;
-    margin-bottom: 1rem;
+    margin-bottom: 0.6rem;
+}
+
+/* Fake auth card */
+.auth-card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 0.4rem;
+}
+.auth-tabs {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+}
+.auth-tab {
+    flex: 1;
+    padding: 0.2rem 0.4rem;
+    text-align: center;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    border: 1px solid #ddd;
+    cursor: default;
+}
+.auth-tab.active {
+    background-color: #8A1538;
+    color: #fff;
+    border-color: #8A1538;
+}
+.auth-link {
+    font-size: 0.8rem;
+    color: #8A1538;
+    text-decoration: none;
+}
+.auth-link:hover {
+    text-decoration: underline;
 }
 </style>
 """
@@ -255,6 +205,7 @@ body, .stApp {
 # ==============================
 # Streamlit App
 # ==============================
+
 def main():
     st.set_page_config(
         page_title="English Worksheets Generator",
@@ -263,54 +214,49 @@ def main():
     )
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    # ---------- AUTH ----------
-    if not check_auth():
-        return
-
-    # ---------- API KEY ----------
+    # ---- API key (no UI) ----
     api_key = get_api_key()
     if not api_key:
         st.error(
             "No OpenAI API key found. Please add it in Settings → Secrets as OPENAI_API_KEY."
         )
         return
-
     client = OpenAI(api_key=api_key)
 
-    # ---------- SIDEBAR: SETTINGS ----------
-    st.sidebar.markdown("### ⚙️ Teacher Settings")
+    # ---- Sidebar settings (minimal) ----
+    st.sidebar.markdown("### ⚙️ Teacher settings")
 
     class_grade = st.sidebar.selectbox(
-        "Grade you are teaching (actual student grade)",
+        "Grade you are teaching",
         [1, 2, 3, 4, 5, 6],
         index=4,  # default grade 5
     )
 
-    st.sidebar.markdown("#### Curriculum mapping by level")
+    st.sidebar.markdown("#### Curriculum by level")
 
     grades_list = [1, 2, 3, 4, 5, 6]
 
     grade_for_low = st.sidebar.selectbox(
-        "Target curriculum for LOW",
+        "Target for LOW",
         grades_list,
         index=max(class_grade - 2, 1) - 1,
     )
 
     grade_for_medium = st.sidebar.selectbox(
-        "Target curriculum for MEDIUM",
+        "Target for MEDIUM",
         grades_list,
         index=class_grade - 1,
     )
 
     grade_for_high = st.sidebar.selectbox(
-        "Target curriculum for HIGH",
+        "Target for HIGH",
         grades_list,
         index=min(class_grade, 6) - 1,
     )
 
-    low_thr = st.sidebar.slider("Low performance threshold", 0, 100, 50)
-    high_thr = st.sidebar.slider("High performance threshold", 0, 100, 75)
-    num_questions = st.sidebar.slider("Number of questions per worksheet", 3, 10, 5)
+    low_thr = st.sidebar.slider("Low threshold", 0, 100, 50)
+    high_thr = st.sidebar.slider("High threshold", 0, 100, 75)
+    num_questions = st.sidebar.slider("Questions per worksheet", 3, 10, 5)
 
     def map_to_curriculum(level: str) -> int:
         if level == "Low":
@@ -319,142 +265,145 @@ def main():
             return grade_for_medium
         return grade_for_high
 
-    # ---------- MAIN LAYOUT ----------
-    st.markdown(
-        """
-        <div class="main-card">
-            <div class="app-title">English Worksheets Generator</div>
-            <div class="app-subtitle">
-                Adaptive remedial worksheets based on student performance, curriculum mapping,
-                and GPT-powered content generation.
+    # ==========================
+    # HERO + Fake Sign-in shape
+    # ==========================
+    hero_col1, hero_col2 = st.columns([2, 1])
+
+    with hero_col1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="hero-title">English Worksheets Generator</div>
+            <div class="hero-subtitle">
+                A prototype for adaptive remedial worksheets based on student performance,
+                mapped to the Qatari English curriculum.
             </div>
-        </div>
-        """,
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with hero_col2:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class="auth-card-title">Teacher portal</div>
+            <div class="auth-tabs">
+                <div class="auth-tab active">Sign in</div>
+                <div class="auth-tab">Sign up</div>
+                <div class="auth-tab">Forgot password</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        # عناصر شكلية فقط – لا تستخدم في المنطق
+        st.text_input("Email address", placeholder="name@education.qa")
+        st.text_input("Password", type="password", placeholder="••••••••")
+        st.caption("This is a prototype UI. No real account is created or stored.")
+        st.markdown(
+            '<a class="auth-link">Need a new account? Sign up</a><br>'
+            '<a class="auth-link">Forgot your password?</a>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ==========================
+    # STEP 1 – Upload CSV
+    # ==========================
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="step-title">Step 1 – Upload student performance file</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="step-help">'
+        'Upload the CSV file with student scores. The app reshapes it and prepares it for grouping.'
+        '</div>',
         unsafe_allow_html=True,
     )
 
-    # ===== STEP 1: Upload Data =====
-    with st.container():
-        st.markdown('<div class="main-card">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="step-title">Step 1 – Upload student performance file</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="step-help">'
-            'Upload the CSV file containing your students’ scores in each skill. '
-            'The app will automatically reshape it and classify students into Low, Medium, and High.'
-            "</div>",
-            unsafe_allow_html=True,
-        )
+    uploaded = st.file_uploader("Upload CSV (thesis format)", type=["csv"])
 
-        uploaded = st.file_uploader("Upload CSV (thesis format or prepared file)", type=["csv"])
-
-        if uploaded is None:
-            st.info("No file uploaded yet. Please upload your Students.csv file to continue.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            return
-
-        df_raw = pd.read_csv(uploaded)
-        st.markdown("**Raw data preview (first rows):**")
-        st.dataframe(df_raw.head(), use_container_width=True)
+    if uploaded is None:
+        st.info("No file uploaded yet. Please upload your Students.csv file to continue.")
         st.markdown("</div>", unsafe_allow_html=True)
+        return
 
-    # ===== STEP 2: Process & Inspect =====
-    with st.container():
-        st.markdown('<div class="main-card">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="step-title">Step 2 – Process data & review groups</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="step-help">'
-            "The app converts the table into one row per student and skill, "
-            "then classifies performance using the thresholds you set in the sidebar. "
-            "Use this view to check that levels and curriculum mapping look reasonable "
-            "before generating worksheets."
-            "</div>",
-            unsafe_allow_html=True,
-        )
+    df_raw = pd.read_csv(uploaded)
+    st.markdown("**Raw data preview (first rows):**")
+    st.dataframe(df_raw.head(), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        df = transform_thesis_format(df_raw)
-        df["grade"] = class_grade
+    # ==========================
+    # STEP 2 – Process & inspect
+    # ==========================
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="step-title">Step 2 – Process data & review groups</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="step-help">'
+        "The app creates one row per student and skill, classifies performance using the thresholds, "
+        "and maps each level to a curriculum grade."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-        # classify + map
-        df["level"] = df["score"].apply(lambda s: classify_level(s, low_thr, high_thr))
-        df["target_curriculum_grade"] = df["level"].apply(map_to_curriculum)
+    df = transform_thesis_format(df_raw)
+    df["grade"] = class_grade
+    df["level"] = df["score"].apply(lambda s: classify_level(s, low_thr, high_thr))
+    df["target_curriculum_grade"] = df["level"].apply(map_to_curriculum)
 
-        st.markdown("**Processed data (first rows):**")
-        st.dataframe(df.head(), use_container_width=True)
+    st.markdown("**Processed data (first rows):**")
+    st.dataframe(df.head(), use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    # ==========================
+    # STEP 3 – Generate worksheets
+    # ==========================
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="step-title">Step 3 – Generate worksheets</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="step-help">'
+        "Choose a skill and performance level. One worksheet will be generated for each student "
+        "in that group, using the mapped curriculum grade."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-    # ===== STEP 3: Select skill & level, generate worksheets =====
-    with st.container():
-        st.markdown('<div class="main-card">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="step-title">Step 3 – Generate worksheets</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="step-help">'
-            "Choose a skill and performance level. The app will generate a tailored worksheet "
-            "for each student in that group, using the mapped curriculum grade."
-            "</div>",
-            unsafe_allow_html=True,
-        )
+    skills = sorted(df["skill"].unique())
+    selected_skill = st.selectbox("Skill", skills)
 
-        skills = sorted(df["skill"].unique())
-        selected_skill = st.selectbox("Choose a skill", skills)
+    levels = ["Low", "Medium", "High"]
+    selected_level = st.selectbox("Performance level", levels)
 
-        levels = ["Low", "Medium", "High"]
-        selected_level = st.selectbox("Performance level", levels)
+    target_df = df[(df["skill"] == selected_skill) & (df["level"] == selected_level)]
+    st.markdown(f"**Students in this group:** {len(target_df)}")
 
-        target_df = df[(df["skill"] == selected_skill) & (df["level"] == selected_level)]
+    if st.button("Generate worksheets"):
+        if target_df.empty:
+            st.error("No students found for this combination of skill and level.")
+        else:
+            st.success("Generating worksheets… please wait ⏳")
+            for _, row in target_df.iterrows():
+                ws_text = generate_worksheet(
+                    client=client,
+                    student_name=row["student_name"],
+                    student_grade=row["grade"],
+                    curriculum_grade=row["target_curriculum_grade"],
+                    skill=row["skill"],
+                    level=row["level"],
+                    num_questions=num_questions,
+                )
+                st.markdown(f"#### Worksheet for {row['student_name']}")
+                st.text(ws_text)
 
-        st.markdown(f"**Students in this group:** {len(target_df)}")
-
-        if st.button("Generate worksheets"):
-            if target_df.empty:
-                st.error("No students found for this combination of skill and level.")
-            else:
-                st.success("Generating worksheets… please wait ⏳")
-
-                for _, row in target_df.iterrows():
-                    worksheet_text = generate_worksheet(
-                        client=client,
-                        student_name=row["student_name"],
-                        student_grade=row["grade"],
-                        curriculum_grade=row["target_curriculum_grade"],
-                        skill=row["skill"],
-                        level=row["level"],
-                        num_questions=num_questions,
-                    )
-
-                    st.markdown(f"#### Worksheet for {row['student_name']}")
-                    st.text(worksheet_text)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # ===== HELP / USER GUIDE =====
-    with st.expander(" Help & User Guide"):
-        st.markdown(
-            """
-            **Step-by-step usage**
-
-            1. **Sign in** using your `@education.qa` account and teacher password.
-            2. **Set thresholds and mapping** from the sidebar:
-               - Choose the grade you are teaching (e.g. Grade 5).
-               - Choose which curriculum grade should be used for Low / Medium / High.
-               - Adjust Low / High score thresholds if needed.
-            3. **Upload the CSV file** with the students’ scores.
-            4. **Review processed data** in Step 2 to ensure levels and target curriculum grades look correct.
-            5. **Select a skill and level**, then click **Generate worksheets**.
-
-            If a group is empty, the app will warn you. If the OpenAI API key is missing,
-            the app will show an error so that data and content are not silently lost.
-            """
-        )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
