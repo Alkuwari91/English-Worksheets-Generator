@@ -147,37 +147,6 @@ body, .stApp {
     opacity: 0.9;
 }
 
-/* Auth box (UI only) */
-.auth-box {
-    background: white;
-    padding: 1rem 1.3rem;
-    border-radius: 12px;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
-    margin-top: 1rem;
-}
-
-.auth-tabs {
-    display: flex;
-    gap: 0.3rem;
-    margin-bottom: 0.8rem;
-}
-
-.auth-tab {
-    flex: 1;
-    text-align: center;
-    background: #eee;
-    padding: 0.35rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    cursor: default;
-    color: #444;
-}
-
-.auth-tab.active {
-    background: #8A1538;
-    color: white;
-}
-
 /* Cards */
 .card {
     background: white;
@@ -236,23 +205,6 @@ def main():
         return
 
     client = OpenAI(api_key=api_key)
-
-    # ----------------- Auth Box (UI only) -----------------
-    st.markdown('<div class="auth-box">', unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class="auth-tabs">
-            <div class="auth-tab active">Sign in</div>
-            <div class="auth-tab">Sign up</div>
-            <div class="auth-tab">Forgot password</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.text_input("Email address", placeholder="name@education.qa")
-    st.text_input("Password", type="password", placeholder="••••••••")
-    st.caption("UI only — no real login is performed.")
-    st.markdown("</div>", unsafe_allow_html=True)
 
     # ----------------- Sidebar settings -----------------
     st.sidebar.title("Settings")
@@ -347,7 +299,11 @@ def main():
 
     st.markdown(f"Students in this group: **{len(target_df)}**")
 
-    if st.button("Generate worksheets"):
+    # debug: show whether button is pressed
+    pressed = st.button("Generate worksheets")
+    st.write("DEBUG – button pressed:", pressed)
+
+    if pressed:
         if target_df.empty:
             st.error("No students match this skill + level.")
         else:
